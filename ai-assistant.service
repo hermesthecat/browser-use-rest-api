@@ -7,7 +7,7 @@ Type=simple
 User=root
 WorkingDirectory=/opt/ai-assistant
 Environment=PYTHONPATH=/opt/ai-assistant/venv/bin/python
-ExecStart=/opt/ai-assistant/venv/bin/python /opt/ai-assistant/test.py
+ExecStart=/opt/ai-assistant/venv/bin/python /opt/ai-assistant/browser_use_rest_api.py
 Restart=always
 RestartSec=3
 

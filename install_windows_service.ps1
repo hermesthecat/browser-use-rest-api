@@ -32,7 +32,7 @@ if (-not (Test-Path ".\venv")) {
 # Servis kurulumu
 $serviceName = "AIAssistantAPI"
 $pythonPath = "$(Get-Location)\venv\Scripts\python.exe"
-$scriptPath = "$(Get-Location)\test.py"
+$scriptPath = "$(Get-Location)\browser_use_rest_api.py"
 
 # Eğer servis varsa kaldır
 if (Get-Service -Name $serviceName -ErrorAction SilentlyContinue) {

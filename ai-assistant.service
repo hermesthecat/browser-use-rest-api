@@ -1,0 +1,15 @@
+[Unit]
+Description=AI Assistant API Service
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/ai-assistant
+Environment=PYTHONPATH=/opt/ai-assistant/venv/bin/python
+ExecStart=/opt/ai-assistant/venv/bin/python /opt/ai-assistant/test.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target 

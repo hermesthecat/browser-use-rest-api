@@ -1,0 +1,9 @@
+browser-use
+google-generativeai
+langchain-google-genai
+pydantic
+pyperclip
+gradio
+fastapi
+uvicorn[standard]
+python-dotenv

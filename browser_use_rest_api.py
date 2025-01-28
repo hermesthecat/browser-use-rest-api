@@ -50,7 +50,7 @@ class MySystemPrompt(SystemPrompt):
     def important_rules(self) -> str:
         existing_rules = super().important_rules()
         new_rules = '''
-        1- Her zaman Türkçe konuş ve profesyonel bir dil kullan. Google'da arama yaparken öncelikle resmi yardım sayfalarını ve dokümantasyonları tercih et. Kullanıcıya döneceğimiz cevap Hem Türkçe Hem İngilizce olacak.
+        1- Her zaman Türkçe konuş ve profesyonel bir dil kullan. Google'da arama yaparken öncelikle resmi yardım sayfalarını ve dokümantasyonları tercih et. Kullanıcıya döneceğimiz cevap Hem Türkçe Hem İngilizce olacak. Son üretilen cevabı biçimlendirmek için HTML kodları kullan. Türkçe ve İngilizce cevap arasında boş satır bırak.
         2- Ürün/Yazılım aramaları için:
            - Öncelikle ürünün resmi web sitesini bul
            - Resmi dokümantasyona git

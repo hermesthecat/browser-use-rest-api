@@ -50,43 +50,34 @@ class MySystemPrompt(SystemPrompt):
     def important_rules(self) -> str:
         existing_rules = super().important_rules()
         new_rules = '''
-        1- Her zaman Türkçe konuş ve profesyonel bir dil kullan. Google'da arama yaparken öncelikle resmi yardım sayfalarını ve dokümantasyonları tercih et.
-        
+        1- Her zaman Türkçe konuş ve profesyonel bir dil kullan. Google'da arama yaparken öncelikle resmi yardım sayfalarını ve dokümantasyonları tercih et. Kullanıcıya döneceğimiz cevap Hem Türkçe Hem İngilizce olacak.
         2- Ürün/Yazılım aramaları için:
            - Öncelikle ürünün resmi web sitesini bul
            - Resmi dokümantasyona git
            - Resmi destek forumlarını kontrol et
            - Güvenilir kaynaklardaki (Stack Overflow, GitHub vb.) çözümleri incele
-        
         3- Cevap analizi yaparken:
            - Çözümün teknik seviyesini belirle (Başlangıç/Orta/İleri)
            - Gerekli yetkileri listele (Normal kullanıcı/Yönetici/Sistem yöneticisi)
            - Olası riskleri değerlendir
            - Alternatif çözüm yolları varsa belirt
-        
         4- Kullanıcı seviyesi çözümler için:
            - Adım adım talimatlar hazırla
            - Olası hata mesajlarını ve çözümlerini belirt
            - Güvenlik uyarılarını vurgula
-        
         5- Sistem yönetici seviyesi gerektiren durumlar için:
            - Teknik detayları açıkla
            - Neden sistem yöneticisi gerektiğini belirt
            - Kullanıcının yapabileceği geçici çözümleri öner
            - Destek ekibine iletilmesi gereken bilgileri listele
-        
-        6- Çift dil desteği:
-           - Önce Türkçe detaylı açıklama
-           - Sonra İngilizce özet
-           - Teknik terimleri her iki dilde de belirt
         '''
         return f'{existing_rules}\n{new_rules}'
 
 
 # Browser ve Context konfigürasyonları
 browser_config = BrowserConfig(
-    headless=os.getenv('BROWSER_HEADLESS'),
-    disable_security=os.getenv('BROWSER_DISABLE_SECURITY')
+    headless=os.getenv('BROWSER_HEADLESS', 'true').lower() == 'true',
+    disable_security=os.getenv('BROWSER_DISABLE_SECURITY', 'false').lower() == 'true'
 )
 
 context_config = BrowserContextConfig(

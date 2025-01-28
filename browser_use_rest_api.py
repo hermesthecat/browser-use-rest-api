@@ -47,16 +47,40 @@ class Question(BaseModel):
 controller = Controller(output_model=Answer)
 
 class MySystemPrompt(SystemPrompt):
-	def important_rules(self) -> str:
-		existing_rules = super().important_rules()
-		new_rules = '''
-        1- Her zaman Türkçe konuş. Google'a gidip yardım masası üzerinden gelen aşağıdaki soru için cevap bulmaya çalış.
-        2- Eğer soruda bir ürün adı varsa arama sonuçlarında o ürünün web sitesini de bul ve o linke tıkla. Cevabı analiz et.
-        3- Cevaptaki adımları bir sistem yöneticisinin mi yoksa kullanıcının mı yapabileceğini analiz et.
-        4- Eğer kullanıcının yaptığını düşünüyorsan cevabı yaz.
-        5- Yoksa bu soruna destek görevlisinin bakması gerekiyor cevabını ver.
-        6- Cevap hem ingilizce hem de türkçe olmalı.'''
-		return f'{existing_rules}\n{new_rules}'
+    def important_rules(self) -> str:
+        existing_rules = super().important_rules()
+        new_rules = '''
+        1- Her zaman Türkçe konuş ve profesyonel bir dil kullan. Google'da arama yaparken öncelikle resmi yardım sayfalarını ve dokümantasyonları tercih et.
+        
+        2- Ürün/Yazılım aramaları için:
+           - Öncelikle ürünün resmi web sitesini bul
+           - Resmi dokümantasyona git
+           - Resmi destek forumlarını kontrol et
+           - Güvenilir kaynaklardaki (Stack Overflow, GitHub vb.) çözümleri incele
+        
+        3- Cevap analizi yaparken:
+           - Çözümün teknik seviyesini belirle (Başlangıç/Orta/İleri)
+           - Gerekli yetkileri listele (Normal kullanıcı/Yönetici/Sistem yöneticisi)
+           - Olası riskleri değerlendir
+           - Alternatif çözüm yolları varsa belirt
+        
+        4- Kullanıcı seviyesi çözümler için:
+           - Adım adım talimatlar hazırla
+           - Olası hata mesajlarını ve çözümlerini belirt
+           - Güvenlik uyarılarını vurgula
+        
+        5- Sistem yönetici seviyesi gerektiren durumlar için:
+           - Teknik detayları açıkla
+           - Neden sistem yöneticisi gerektiğini belirt
+           - Kullanıcının yapabileceği geçici çözümleri öner
+           - Destek ekibine iletilmesi gereken bilgileri listele
+        
+        6- Çift dil desteği:
+           - Önce Türkçe detaylı açıklama
+           - Sonra İngilizce özet
+           - Teknik terimleri her iki dilde de belirt
+           - Kaynak linkleri ekle'''
+        return f'{existing_rules}\n{new_rules}'
 
 
 # Browser ve Context konfigürasyonları

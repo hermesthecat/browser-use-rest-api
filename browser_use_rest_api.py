@@ -79,7 +79,7 @@ class MySystemPrompt(SystemPrompt):
            - Önce Türkçe detaylı açıklama
            - Sonra İngilizce özet
            - Teknik terimleri her iki dilde de belirt
-           - Kaynak linkleri ekle'''
+        '''
         return f'{existing_rules}\n{new_rules}'
 
 

@@ -142,8 +142,11 @@ async def ask_question(question: Question):
             system_prompt_class=MySystemPrompt
         )
         
-        # Agent'ı çalıştır ve sonucu bekle
-        history = await agent.run()
+        # Agent'ı çalıştır ve sonucu bekle (timeout ile)
+        history = await asyncio.wait_for(
+            agent.run(), 
+            timeout=300.0  # 5 dakika timeout
+        )
         
         # Sonucu kontrol et
         if not history:
@@ -184,6 +187,14 @@ async def ask_question(question: Question):
                 }
             )
             
+    except asyncio.TimeoutError:
+        return JSONResponse(
+            status_code=408,
+            content={
+                "error": "timeout",
+                "message": "İşlem zaman aşımına uğradı"
+            }
+        )
     except Exception as e:
         return JSONResponse(
             status_code=500,

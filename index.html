@@ -79,6 +79,27 @@
 
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     <script>
+      // Dinamik API URL belirleme
+      function getApiUrl() {
+        // Önce environment variable kontrol et
+        if (window.API_BASE_URL) {
+          return window.API_BASE_URL + '/ask';
+        }
+        
+        // Sonra current host kullan
+        const protocol = window.location.protocol;
+        const hostname = window.location.hostname;
+        const port = window.location.port || (protocol === 'https:' ? '443' : '80');
+        
+        // Development için localhost kontrolü
+        if (hostname === 'localhost' || hostname === '127.0.0.1') {
+          return `${protocol}//${hostname}:8000/ask`;
+        }
+        
+        // Production için same origin
+        return `${protocol}//${hostname}:${port}/ask`;
+      }
+
       $(document).ready(function () {
         $("#questionForm").on("submit", function (e) {
           e.preventDefault();
@@ -91,7 +112,7 @@
           $("#error").hide();
 
           $.ajax({
-            url: "http://10.11.13.14:8000/ask",
+            url: getApiUrl(),
             method: "POST",
             contentType: "application/json",
             data: JSON.stringify({

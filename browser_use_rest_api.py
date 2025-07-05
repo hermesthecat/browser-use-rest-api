@@ -9,12 +9,40 @@ from fastapi.middleware.cors import CORSMiddleware
 import os
 from dotenv import load_dotenv
 import asyncio
+import sys
 from typing import Optional
 
 os.environ["ANONYMIZED_TELEMETRY"] = "false"
 
 # .env dosyasını yükle
 load_dotenv()
+
+# Environment variable validation
+def validate_environment():
+    required_env_vars = {
+        'GOOGLE_API_KEY': os.getenv('GOOGLE_API_KEY'),
+        'GOOGLE_MODEL_NAME': os.getenv('GOOGLE_MODEL_NAME'),
+        'SERVER_HOST': os.getenv('SERVER_HOST'),
+        'SERVER_PORT': os.getenv('SERVER_PORT')
+    }
+
+    for var_name, var_value in required_env_vars.items():
+        if not var_value:
+            print(f"ERROR: Required environment variable {var_name} is not set")
+            sys.exit(1)
+
+    # Port validation
+    try:
+        port = int(os.getenv('SERVER_PORT'))
+        if port < 1 or port > 65535:
+            print("ERROR: SERVER_PORT must be between 1 and 65535")
+            sys.exit(1)
+    except (ValueError, TypeError):
+        print("ERROR: SERVER_PORT must be a valid integer")
+        sys.exit(1)
+
+# Validate environment variables at startup
+validate_environment()
 
 app = FastAPI(
     title="AI Assistant API",
@@ -97,13 +125,15 @@ context_config = BrowserContextConfig(
     viewport_expansion=500
 )
 
-# Browser ve Context oluşturma
-browser_instance = browser.Browser(config=browser_config)
-context = BrowserContext(browser=browser_instance, config=context_config)
-
 @app.post("/ask", response_model=Answer)
 async def ask_question(question: Question):
+    browser_instance = None
+    context = None
     try:
+        # Her request için yeni browser instance oluştur
+        browser_instance = browser.Browser(config=browser_config)
+        context = BrowserContext(browser=browser_instance, config=context_config)
+        
         agent = Agent(
             browser_context=context,
             task=question.task,
@@ -162,6 +192,18 @@ async def ask_question(question: Question):
                 "message": str(e)
             }
         )
+    finally:
+        # Kaynakları temizle
+        if context:
+            try:
+                await context.close()
+            except Exception as e:
+                print(f"Error closing context: {e}")
+        if browser_instance:
+            try:
+                await browser_instance.close()
+            except Exception as e:
+                print(f"Error closing browser: {e}")
 
 if __name__ == "__main__":
     import uvicorn

@@ -12,6 +12,9 @@ from dotenv import load_dotenv
 import asyncio
 import sys
 import logging
+import gc
+from contextlib import asynccontextmanager
+from asyncio import Semaphore
 from typing import Optional
 
 os.environ["ANONYMIZED_TELEMETRY"] = "false"
@@ -171,158 +174,171 @@ class MySystemPrompt(SystemPrompt):
         return f'{existing_rules}\n{new_rules}'
 
 
-# Browser ve Context konfigürasyonları
-browser_config = BrowserConfig(
-    headless=os.getenv('BROWSER_HEADLESS', 'true').lower() == 'true',
-    disable_security=False,  # Güvenlik özelliklerini aktif tut
-    # Container ortamında gerekirse spesifik args ekle
-    extra_chromium_args=[
-        '--no-sandbox',  # Sadece container ortamında
-        '--disable-dev-shm-usage',
-        '--disable-gpu'
-    ] if os.getenv('CONTAINER_ENV') == 'true' else []
-)
+# Browser Manager Class
+class BrowserManager:
+    def __init__(self):
+        self.browser_config = BrowserConfig(
+            headless=os.getenv('BROWSER_HEADLESS', 'true').lower() == 'true',
+            disable_security=False,  # Güvenlik özelliklerini aktif tut
+            # Container ortamında gerekirse spesifik args ekle
+            extra_chromium_args=[
+                '--no-sandbox',  # Sadece container ortamında
+                '--disable-dev-shm-usage',
+                '--disable-gpu'
+            ] if os.getenv('CONTAINER_ENV') == 'true' else []
+        )
+        self.context_config = BrowserContextConfig(
+            wait_for_network_idle_page_load_time=3.0,
+            browser_window_size={'width': 1280, 'height': 1100},
+            locale='en-US',
+            highlight_elements=True,
+            viewport_expansion=500
+        )
+    
+    @asynccontextmanager
+    async def get_context(self):
+        browser_instance = None
+        context = None
+        try:
+            browser_instance = browser.Browser(config=self.browser_config)
+            context = BrowserContext(browser=browser_instance, config=self.context_config)
+            yield context
+        finally:
+            if context:
+                try:
+                    await context.close()
+                except Exception as e:
+                    logger.error(f"Error closing context: {e}")
+            if browser_instance:
+                try:
+                    await browser_instance.close()
+                except Exception as e:
+                    logger.error(f"Error closing browser: {e}")
+            gc.collect()  # Force garbage collection
 
-context_config = BrowserContextConfig(
-    wait_for_network_idle_page_load_time=3.0,
-    browser_window_size={'width': 1280, 'height': 1100},
-    locale='en-US',
-    highlight_elements=True,
-    viewport_expansion=500
-)
+# Browser manager instance
+browser_manager = BrowserManager()
+
+# Maximum concurrent browser instances
+MAX_CONCURRENT_BROWSERS = int(os.getenv('MAX_CONCURRENT_BROWSERS', '3'))
+browser_semaphore = Semaphore(MAX_CONCURRENT_BROWSERS)
 
 @app.post("/ask", response_model=Answer)
 async def ask_question(question: Question):
-    browser_instance = None
-    context = None
-    try:
-        # Her request için yeni browser instance oluştur
-        browser_instance = browser.Browser(config=browser_config)
-        context = BrowserContext(browser=browser_instance, config=context_config)
-        
-        agent = Agent(
-            browser_context=context,
-            task=question.task,
-            llm=llm,
-            controller=controller,
-            system_prompt_class=MySystemPrompt
-        )
-        
-        # Agent'ı çalıştır ve sonucu bekle (timeout ile)
-        history = await asyncio.wait_for(
-            agent.run(), 
-            timeout=300.0  # 5 dakika timeout
-        )
-        
-        # Sonucu kontrol et
-        if not history:
-            return JSONResponse(
-                status_code=404,
-                content={
-                    "error": "not_found",
-                    "message": "Agent çalışması başarısız oldu"
-                }
-            )
-        
-        # Final sonucu al
-        result = history.final_result()
-        if not result:
-            return JSONResponse(
-                status_code=404,
-                content={
-                    "error": "not_found",
-                    "message": "Sonuç bulunamadı"
-                }
-            )
-            
-        # Sonucu JSON'a çevir
+    async with browser_semaphore:
         try:
-            # Önce result validation
-            if not result:
-                raise ValueError("No result found")
+            async with browser_manager.get_context() as context:
+                agent = Agent(
+                    browser_context=context,
+                    task=question.task,
+                    llm=llm,
+                    controller=controller,
+                    system_prompt_class=MySystemPrompt
+                )
                 
-            # Önce string kontrolü
-            if not isinstance(result, str):
-                result = str(result)
+                # Agent'ı çalıştır ve sonucu bekle (timeout ile)
+                history = await asyncio.wait_for(
+                    agent.run(), 
+                    timeout=300.0  # 5 dakika timeout
+                )
                 
-            # JSON validation
-            import json
-            json.loads(result)  # JSON geçerliliği kontrol et
-            
-            answer = Answer.model_validate_json(result)
+                # Sonucu kontrol et
+                if not history:
+                    return JSONResponse(
+                        status_code=404,
+                        content={
+                            "error": "not_found",
+                            "message": "Agent çalışması başarısız oldu"
+                        }
+                    )
+                
+                # Final sonucu al
+                result = history.final_result()
+                if not result:
+                    return JSONResponse(
+                        status_code=404,
+                        content={
+                            "error": "not_found",
+                            "message": "Sonuç bulunamadı"
+                        }
+                    )
+                    
+                # Sonucu JSON'a çevir
+                try:
+                    # Önce result validation
+                    if not result:
+                        raise ValueError("No result found")
+                        
+                    # Önce string kontrolü
+                    if not isinstance(result, str):
+                        result = str(result)
+                        
+                    # JSON validation
+                    import json
+                    json.loads(result)  # JSON geçerliliği kontrol et
+                    
+                    answer = Answer.model_validate_json(result)
+                    return JSONResponse(
+                        status_code=200,
+                        content={
+                            "answer": answer.answer
+                        }
+                    )
+                except json.JSONDecodeError as e:
+                    logger.error(f"Invalid JSON result: {result[:100]}...")
+                    return JSONResponse(
+                        status_code=500,
+                        content={
+                            "error": "parse_error",
+                            "message": "Geçersiz yanıt formatı"
+                        }
+                    )
+                except Exception as e:
+                    logger.error(f"Result parsing error: {str(e)}")
+                    return JSONResponse(
+                        status_code=500,
+                        content={
+                            "error": "parse_error",
+                            "message": "Yanıt işlenemedi"
+                        }
+                    )
+                    
+        except asyncio.TimeoutError:
+            logger.error("Request timeout")
             return JSONResponse(
-                status_code=200,
+                status_code=408,
                 content={
-                    "answer": answer.answer
+                    "error": "timeout",
+                    "message": "İşlem zaman aşımına uğradı"
                 }
             )
-        except json.JSONDecodeError as e:
-            logger.error(f"Invalid JSON result: {result[:100]}...")
+        except ValueError as e:
+            logger.error(f"Validation error: {str(e)}")
             return JSONResponse(
-                status_code=500,
+                status_code=400,
                 content={
-                    "error": "parse_error",
-                    "message": "Geçersiz yanıt formatı"
+                    "error": "validation_error",
+                    "message": "Geçersiz parametre"
+                }
+            )
+        except ConnectionError as e:
+            logger.error(f"Connection error: {str(e)}")
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "error": "service_unavailable",
+                    "message": "Servis geçici olarak kullanılamıyor"
                 }
             )
         except Exception as e:
-            logger.error(f"Result parsing error: {str(e)}")
+            logger.error(f"Unexpected error: {str(e)}", exc_info=True)
             return JSONResponse(
                 status_code=500,
                 content={
-                    "error": "parse_error",
-                    "message": "Yanıt işlenemedi"
+                    "error": "internal_server_error",
+                    "message": "Beklenmedik bir hata oluştu"
                 }
             )
-            
-    except asyncio.TimeoutError:
-        logger.error("Request timeout")
-        return JSONResponse(
-            status_code=408,
-            content={
-                "error": "timeout",
-                "message": "İşlem zaman aşımına uğradı"
-            }
-        )
-    except ValueError as e:
-        logger.error(f"Validation error: {str(e)}")
-        return JSONResponse(
-            status_code=400,
-            content={
-                "error": "validation_error",
-                "message": "Geçersiz parametre"
-            }
-        )
-    except ConnectionError as e:
-        logger.error(f"Connection error: {str(e)}")
-        return JSONResponse(
-            status_code=503,
-            content={
-                "error": "service_unavailable",
-                "message": "Servis geçici olarak kullanılamıyor"
-            }
-        )
-    except Exception as e:
-        logger.error(f"Unexpected error: {str(e)}", exc_info=True)
-        return JSONResponse(
-            status_code=500,
-            content={
-                "error": "internal_server_error",
-                "message": "Beklenmedik bir hata oluştu"
-            }
-        )
-    finally:
-        # Kaynakları temizle
-        if context:
-            try:
-                await context.close()
-            except Exception as e:
-                print(f"Error closing context: {e}")
-        if browser_instance:
-            try:
-                await browser_instance.close()
-            except Exception as e:
-                print(f"Error closing browser: {e}")
 
 if __name__ == "__main__":
     import uvicorn

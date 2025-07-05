@@ -54,18 +54,46 @@ app = FastAPI(
 )
 
 # CORS ayarları
+def get_allowed_origins():
+    origins_env = os.getenv('ALLOWED_ORIGINS', '')
+    if origins_env:
+        return [origin.strip() for origin in origins_env.split(',')]
+    
+    # Development için default değerler
+    return [
+        "http://localhost:3000",
+        "http://localhost:8080",
+        "http://localhost:8000",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:8080",
+        "http://127.0.0.1:8000"
+    ]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Güvenlik için production'da spesifik domain belirtilmeli
+    allow_origins=get_allowed_origins(),
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST"],  # Sadece gerekli methodlar
+    allow_headers=["Content-Type", "Authorization"],  # Sadece gerekli headerlar
 )
+
+# Secure configuration class
+class Config:
+    def __init__(self):
+        self.google_api_key = SecretStr(os.getenv('GOOGLE_API_KEY', ''))
+        self.google_model_name = os.getenv('GOOGLE_MODEL_NAME', 'gemini-2.0-flash-exp')
+        
+    def get_api_key(self) -> str:
+        if not self.google_api_key.get_secret_value():
+            raise ValueError("GOOGLE_API_KEY is required")
+        return self.google_api_key.get_secret_value()
+
+config = Config()
 
 # Initialize the model
 llm = ChatGoogleGenerativeAI(
-    model=os.getenv('GOOGLE_MODEL_NAME'),
-    api_key=os.getenv('GOOGLE_API_KEY')
+    model=config.google_model_name,
+    api_key=config.get_api_key()
 )
 
 class Answer(BaseModel):
@@ -114,7 +142,13 @@ class MySystemPrompt(SystemPrompt):
 # Browser ve Context konfigürasyonları
 browser_config = BrowserConfig(
     headless=os.getenv('BROWSER_HEADLESS', 'true').lower() == 'true',
-    disable_security=os.getenv('BROWSER_DISABLE_SECURITY', 'false').lower() == 'true'
+    disable_security=False,  # Güvenlik özelliklerini aktif tut
+    # Container ortamında gerekirse spesifik args ekle
+    extra_chromium_args=[
+        '--no-sandbox',  # Sadece container ortamında
+        '--disable-dev-shm-usage',
+        '--disable-gpu'
+    ] if os.getenv('CONTAINER_ENV') == 'true' else []
 )
 
 context_config = BrowserContextConfig(

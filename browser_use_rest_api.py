@@ -11,6 +11,8 @@ from dotenv import load_dotenv
 import asyncio
 from typing import Optional
 
+os.environ["ANONYMIZED_TELEMETRY"] = "false"
+
 # .env dosyasını yükle
 load_dotenv()
 

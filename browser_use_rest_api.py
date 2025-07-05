@@ -2,7 +2,8 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from browser_use import Agent, Controller, ActionResult, SystemPrompt, BrowserConfig
 from browser_use.browser import browser
 from browser_use.browser.context import BrowserContext, BrowserContextConfig
-from pydantic import SecretStr, BaseModel
+from pydantic import SecretStr, BaseModel, validator, Field
+import re
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,6 +11,7 @@ import os
 from dotenv import load_dotenv
 import asyncio
 import sys
+import logging
 from typing import Optional
 
 os.environ["ANONYMIZED_TELEMETRY"] = "false"
@@ -43,6 +45,17 @@ def validate_environment():
 
 # Validate environment variables at startup
 validate_environment()
+
+# Setup logging
+logger = logging.getLogger(__name__)
+
+# Custom API Error class
+class APIError(Exception):
+    def __init__(self, message: str, status_code: int = 500, error_code: str = "internal_error"):
+        self.message = message
+        self.status_code = status_code
+        self.error_code = error_code
+        super().__init__(message)
 
 app = FastAPI(
     title="AI Assistant API",
@@ -100,7 +113,26 @@ class Answer(BaseModel):
     answer: str
 
 class Question(BaseModel):
-    task: str
+    task: str = Field(..., min_length=1, max_length=5000)
+    
+    @validator('task')
+    def validate_task(cls, v):
+        if not v or not v.strip():
+            raise ValueError('Task cannot be empty')
+        
+        # Malicious pattern kontrolü
+        malicious_patterns = [
+            r'<script.*?>.*?</script>',  # XSS
+            r'javascript:',
+            r'data:text/html',
+            r'vbscript:',
+        ]
+        
+        for pattern in malicious_patterns:
+            if re.search(pattern, v, re.IGNORECASE):
+                raise ValueError('Invalid characters detected')
+        
+        return v.strip()
 
 controller = Controller(output_model=Answer)
 
@@ -205,6 +237,18 @@ async def ask_question(question: Question):
             
         # Sonucu JSON'a çevir
         try:
+            # Önce result validation
+            if not result:
+                raise ValueError("No result found")
+                
+            # Önce string kontrolü
+            if not isinstance(result, str):
+                result = str(result)
+                
+            # JSON validation
+            import json
+            json.loads(result)  # JSON geçerliliği kontrol et
+            
             answer = Answer.model_validate_json(result)
             return JSONResponse(
                 status_code=200,
@@ -212,16 +256,27 @@ async def ask_question(question: Question):
                     "answer": answer.answer
                 }
             )
-        except Exception as e:
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON result: {result[:100]}...")
             return JSONResponse(
                 status_code=500,
                 content={
                     "error": "parse_error",
-                    "message": f"Sonuç JSON'a çevrilemedi: {str(e)}"
+                    "message": "Geçersiz yanıt formatı"
+                }
+            )
+        except Exception as e:
+            logger.error(f"Result parsing error: {str(e)}")
+            return JSONResponse(
+                status_code=500,
+                content={
+                    "error": "parse_error",
+                    "message": "Yanıt işlenemedi"
                 }
             )
             
     except asyncio.TimeoutError:
+        logger.error("Request timeout")
         return JSONResponse(
             status_code=408,
             content={
@@ -229,12 +284,31 @@ async def ask_question(question: Question):
                 "message": "İşlem zaman aşımına uğradı"
             }
         )
+    except ValueError as e:
+        logger.error(f"Validation error: {str(e)}")
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": "validation_error",
+                "message": "Geçersiz parametre"
+            }
+        )
+    except ConnectionError as e:
+        logger.error(f"Connection error: {str(e)}")
+        return JSONResponse(
+            status_code=503,
+            content={
+                "error": "service_unavailable",
+                "message": "Servis geçici olarak kullanılamıyor"
+            }
+        )
     except Exception as e:
+        logger.error(f"Unexpected error: {str(e)}", exc_info=True)
         return JSONResponse(
             status_code=500,
             content={
                 "error": "internal_server_error",
-                "message": str(e)
+                "message": "Beklenmedik bir hata oluştu"
             }
         )
     finally:
